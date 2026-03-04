@@ -1,13 +1,8 @@
 
 class Payment:
-    _id_counter = 1
-
-    def __init__(self, amount: float, type: str, date: str, id=None):
-        if id is None:
-            self.__id = Payment._id_counter
-            Payment._id_counter += 1
-        else:
-            self.__id = id
+    def __init__(self, amount: float, type: str, date: str, tenant_id: int | None = None, id: int | None = None):
+        self.__id = id
+        self.__tenant_id = tenant_id
         self.__amount = amount
         self.__type = type
         self.__date = date
@@ -17,6 +12,12 @@ class Payment:
 
     def set_id(self, id):
         self.__id = id
+
+    def get_tenant_id(self):
+        return self.__tenant_id
+
+    def set_tenant_id(self, tenant_id: int):
+        self.__tenant_id = tenant_id
 
     def get_amount(self):
         return self.__amount

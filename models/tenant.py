@@ -1,8 +1,4 @@
-from payment import Payment
-
 class Tenant:
-    _id_counter = 1
-
     def __init__(
         self,
         name,
@@ -10,20 +6,15 @@ class Tenant:
         unit: str,
         rent_cost: float,
         amount_paid: float,
-        paid: bool,
-        id=None
+        id: int | None = None,
     ):
-        if id is None:
-            self.__id = Tenant._id_counter
-            Tenant._id_counter += 1
-        else:
-            self.__id = id
+        self.__id = id
         self.__name = name
         self.__phone = phone
         self.__unit = unit
         self.__rent_cost = rent_cost
         self.__amount_paid = amount_paid
-        self.__paid = paid
+        self.__paid = 1 if amount_paid >= rent_cost else 0
     
     def get_id(self):
         return self.__id
@@ -54,24 +45,17 @@ class Tenant:
 
     def set_rent_cost(self, rent_cost: float):
         self.__rent_cost = rent_cost
+        self.__paid = 1 if self.__amount_paid >= self.__rent_cost else 0
     
     def get_amount_paid(self):
         return self.__amount_paid
     
     def set_amount_paid(self, amount_paid: float):
         self.__amount_paid = amount_paid
+        self.__paid = 1 if self.__amount_paid >= self.__rent_cost else 0
 
     def get_paid(self):
         return self.__paid
 
     def set_paid(self, paid: bool):
         self.__paid = paid
-
-    """
-    def get_payments(self):
-        return self.__payments
-
-    def add_payment(self, payment):
-        if self.__payments is not None:
-            self.__payments.append(payment)
-    """
