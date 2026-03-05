@@ -1,16 +1,13 @@
 import sqlite3
 
-from models.payment import Payment
-from models.tenant import Tenant
-
 
 TENANTS_DB_PATH = "data/tenants.db"
-PAYMENTS_DB_PATH = "data/payments.db"
 
 
 def get_connection(db_path: str):
 	conn = sqlite3.connect(db_path)
 	conn.row_factory = sqlite3.Row
+	conn.execute("PRAGMA foreign_keys = ON")
 	return conn
 
 
@@ -34,6 +31,20 @@ def create_tenants_table(conn: sqlite3.Connection):
 
 def create_payments_table(conn: sqlite3.Connection):
 	cursor = conn.cursor()
+
+	# Recreate payments table if it exists without the foreign key constraint.
+	cursor.execute("PRAGMA foreign_key_list(payments)")
+	fk_rows = cursor.fetchall()
+	if fk_rows == []:
+		cursor.execute(
+			"""
+			SELECT name FROM sqlite_master
+			WHERE type='table' AND name='payments'
+			"""
+		)
+		if cursor.fetchone() is not None:
+			cursor.execute("ALTER TABLE payments RENAME TO payments_old")
+
 	cursor.execute(
 		"""
 		CREATE TABLE IF NOT EXISTS payments (
@@ -41,10 +52,29 @@ def create_payments_table(conn: sqlite3.Connection):
 			tenant_id INTEGER NOT NULL,
 			amount REAL NOT NULL,
 			type TEXT NOT NULL,
-			date TEXT NOT NULL
+			date TEXT NOT NULL,
+			FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE ON UPDATE CASCADE
 		)
 		"""
 	)
+
+	cursor.execute(
+		"""
+		SELECT name FROM sqlite_master
+		WHERE type='table' AND name='payments_old'
+		"""
+	)
+	if cursor.fetchone() is not None:
+		cursor.execute(
+			"""
+			INSERT INTO payments (id, tenant_id, amount, type, date)
+			SELECT id, tenant_id, amount, type, date
+			FROM payments_old
+			WHERE tenant_id IN (SELECT id FROM tenants)
+			"""
+		)
+		cursor.execute("DROP TABLE payments_old")
+
 	conn.commit()
 
 
@@ -54,7 +84,7 @@ def init_database(db_path: str = TENANTS_DB_PATH):
 	conn.close()
 
 
-def init_payments_database(db_path: str = PAYMENTS_DB_PATH):
+def init_payments_database(db_path: str = TENANTS_DB_PATH):
 	conn = get_connection(db_path)
 	create_payments_table(conn)
 	conn.close()
@@ -62,223 +92,4 @@ def init_payments_database(db_path: str = PAYMENTS_DB_PATH):
 
 def bootstrap() -> None:
 	init_database(TENANTS_DB_PATH)
-	init_payments_database(PAYMENTS_DB_PATH)
-
-
-class TenantRepository:
-	def __init__(self, db_path: str = TENANTS_DB_PATH):
-		self.db_path = db_path
-
-	def create(self, tenant: Tenant) -> Tenant:
-		conn = get_connection(self.db_path)
-		cursor = conn.cursor()
-		cursor.execute(
-			"""
-			INSERT INTO tenants (name, phone, unit, rent_cost, amount_paid, paid)
-			VALUES (?, ?, ?, ?, ?, ?)
-			""",
-			(
-				tenant.get_name(),
-				tenant.get_phone(),
-				tenant.get_unit(),
-				tenant.get_rent_cost(),
-				tenant.get_amount_paid(),
-				tenant.get_paid(),
-			),
-		)
-		tenant.set_id(cursor.lastrowid)
-		conn.commit()
-		conn.close()
-		return tenant
-
-	def get_by_id(self, tenant_id: int) -> Tenant | None:
-		conn = get_connection(self.db_path)
-		cursor = conn.cursor()
-		cursor.execute("SELECT * FROM tenants WHERE id = ?", (tenant_id,))
-		row = cursor.fetchone()
-		conn.close()
-		if row is None:
-			return None
-		return Tenant(
-			id=row["id"],
-			name=row["name"],
-			phone=row["phone"],
-			unit=row["unit"],
-			rent_cost=row["rent_cost"],
-			amount_paid=row["amount_paid"],
-		)
-
-	def list_all(self) -> list[Tenant]:
-		conn = get_connection(self.db_path)
-		cursor = conn.cursor()
-		cursor.execute("SELECT * FROM tenants ORDER BY id")
-		rows = cursor.fetchall()
-		conn.close()
-		return [
-			Tenant(
-				id=row["id"],
-				name=row["name"],
-				phone=row["phone"],
-				unit=row["unit"],
-				rent_cost=row["rent_cost"],
-				amount_paid=row["amount_paid"],
-			)
-			for row in rows
-		]
-
-	def update(self, tenant: Tenant) -> None:
-		if tenant.get_id() is None:
-			raise ValueError("Tenant must have an id to update")
-
-		conn = get_connection(self.db_path)
-		cursor = conn.cursor()
-		cursor.execute(
-			"""
-			UPDATE tenants
-			SET name = ?, phone = ?, unit = ?, rent_cost = ?, amount_paid = ?, paid = ?
-			WHERE id = ?
-			""",
-			(
-				tenant.get_name(),
-				tenant.get_phone(),
-				tenant.get_unit(),
-				tenant.get_rent_cost(),
-				tenant.get_amount_paid(),
-				tenant.get_paid(),
-				tenant.get_id(),
-			),
-		)
-		conn.commit()
-		conn.close()
-
-	def delete(self, tenant_id: int) -> None:
-		conn = get_connection(self.db_path)
-		cursor = conn.cursor()
-		cursor.execute("DELETE FROM tenants WHERE id = ?", (tenant_id,))
-		conn.commit()
-		conn.close()
-
-
-class PaymentRepository:
-	def __init__(self, db_path: str = PAYMENTS_DB_PATH):
-		self.db_path = db_path
-
-	def create(self, payment: Payment) -> Payment:
-		if payment.get_tenant_id() is None:
-			raise ValueError("Payment must have tenant_id before create")
-
-		conn = get_connection(self.db_path)
-		cursor = conn.cursor()
-		cursor.execute(
-			"""
-			INSERT INTO payments (tenant_id, amount, type, date)
-			VALUES (?, ?, ?, ?)
-			""",
-			(
-				payment.get_tenant_id(),
-				payment.get_amount(),
-				payment.get_type(),
-				payment.get_date(),
-			),
-		)
-		payment.set_id(cursor.lastrowid)
-		conn.commit()
-		conn.close()
-		return payment
-
-	def get_by_id(self, payment_id: int) -> Payment | None:
-		conn = get_connection(self.db_path)
-		cursor = conn.cursor()
-		cursor.execute("SELECT * FROM payments WHERE id = ?", (payment_id,))
-		row = cursor.fetchone()
-		conn.close()
-		if row is None:
-			return None
-		return Payment(
-			id=row["id"],
-			tenant_id=row["tenant_id"],
-			amount=row["amount"],
-			type=row["type"],
-			date=row["date"],
-		)
-
-	def list_all(self) -> list[Payment]:
-		conn = get_connection(self.db_path)
-		cursor = conn.cursor()
-		cursor.execute("SELECT * FROM payments ORDER BY id")
-		rows = cursor.fetchall()
-		conn.close()
-		return [
-			Payment(
-				id=row["id"],
-				tenant_id=row["tenant_id"],
-				amount=row["amount"],
-				type=row["type"],
-				date=row["date"],
-			)
-			for row in rows
-		]
-
-	def list_by_tenant_id(self, tenant_id: int) -> list[Payment]:
-		conn = get_connection(self.db_path)
-		cursor = conn.cursor()
-		cursor.execute("SELECT * FROM payments WHERE tenant_id = ? ORDER BY id", (tenant_id,))
-		rows = cursor.fetchall()
-		conn.close()
-		return [
-			Payment(
-				id=row["id"],
-				tenant_id=row["tenant_id"],
-				amount=row["amount"],
-				type=row["type"],
-				date=row["date"],
-			)
-			for row in rows
-		]
-
-	def update(self, payment: Payment) -> None:
-		if payment.get_id() is None:
-			raise ValueError("Payment must have an id to update")
-
-		conn = get_connection(self.db_path)
-		cursor = conn.cursor()
-		cursor.execute(
-			"""
-			UPDATE payments
-			SET tenant_id = ?, amount = ?, type = ?, date = ?
-			WHERE id = ?
-			""",
-			(
-				payment.get_tenant_id(),
-				payment.get_amount(),
-				payment.get_type(),
-				payment.get_date(),
-				payment.get_id(),
-			),
-		)
-		conn.commit()
-		conn.close()
-
-	def delete(self, payment_id: int) -> None:
-		conn = get_connection(self.db_path)
-		cursor = conn.cursor()
-		cursor.execute("DELETE FROM payments WHERE id = ?", (payment_id,))
-		conn.commit()
-		conn.close()
-
-
-class TenantService:
-	def __init__(self, tenant_repository: TenantRepository, payment_repository: PaymentRepository):
-		self.tenant_repository = tenant_repository
-		self.payment_repository = payment_repository
-
-	def add_payment(self, tenant_id: int, payment: Payment) -> None:
-		tenant = self.tenant_repository.get_by_id(tenant_id)
-		if tenant is None:
-			raise ValueError(f"Tenant {tenant_id} not found")
-
-		payment.set_tenant_id(tenant_id)
-		self.payment_repository.create(payment)
-
-		tenant.set_amount_paid(tenant.get_amount_paid() + payment.get_amount())
-		self.tenant_repository.update(tenant)
+	init_payments_database(TENANTS_DB_PATH)

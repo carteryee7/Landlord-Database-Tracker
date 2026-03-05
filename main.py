@@ -1,5 +1,7 @@
 import database
-from database import PaymentRepository, TenantRepository, TenantService
+from repositories.tenant_repository import TenantRepository
+from repositories.payment_repository import PaymentRepository
+from services import TenantService
 from models.tenant import Tenant
 from models.payment import Payment
 
