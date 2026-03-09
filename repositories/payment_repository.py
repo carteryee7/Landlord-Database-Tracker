@@ -102,6 +102,7 @@ class PaymentRepository:
 		conn.commit()
 		conn.close()
 
+    # maybe get rid of because you shouldn't be able to delete history
 	def delete(self, payment_id: int) -> None:
 		conn = get_connection(self.db_path)
 		cursor = conn.cursor()
